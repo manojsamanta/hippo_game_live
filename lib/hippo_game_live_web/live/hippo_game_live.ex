@@ -1,22 +1,21 @@
 defmodule HippoGameLiveWeb.HippoGameLive do
   use Phoenix.LiveView
 
+  @game_time 4
+  @track_length 10
+
+  @stored_text ["seattle", "portland", "bangkok", "tokyo", "london", "moscow", "vancouver"]
+
   def render(assigns) do
     HippoGameLiveWeb.HippoGameView.render("index.html", assigns)
   end
 
-  @topic inspect(__MODULE__)
-
-  @game_length 30
   def mount(session, socket) do
     socket =
       socket
       |> new_game()
-      |> assign(best_score: String.to_integer(Map.get(session.cookies, "best_score", "0")))
-      |> assign(scores: [])
 
     if connected?(socket) do
-      Phoenix.PubSub.subscribe(HippoGameLive.PubSub, @topic)
       {:ok, schedule_tick(socket)}
     else
       {:ok, socket}
@@ -25,17 +24,12 @@ defmodule HippoGameLiveWeb.HippoGameLive do
 
   defp new_game(socket) do
     assign(socket,
-      board: map(),
+      track: map(),
       player_x: 1,
-      player_y: 1,
-      direction: :playerdown,
-      score: 0,
-      new_best_score?: false,
-      bonus_value: 0,
-      field_size: 50,
       start_time: System.os_time(:second),
       gameplay?: true,
-      time_left: @game_length
+      time_left: @game_time,
+      text_to_type: @stored_text |> Enum.shuffle |> Enum.at(0)
     )
   end
 
@@ -45,32 +39,17 @@ defmodule HippoGameLiveWeb.HippoGameLive do
   end
 
   def handle_info(:tick, socket) do
-    timeleft = socket.assigns.start_time + @game_length - System.os_time(:second)
+    timeleft = socket.assigns.start_time + @game_time - System.os_time(:second)
 
     if timeleft <= 0 do
-      %{score: score, best_score: best_score} = socket.assigns
-      Phoenix.PubSub.broadcast(HippoGameLive.PubSub, @topic, {:score, score})
-      new_best_score? = score > best_score
-      best_score = if score > best_score, do: score, else: best_score
-
-      {:noreply,
-       assign(socket,
-         gameplay?: false,
-         best_score: best_score,
-         time_left: 0,
-         new_best_score?: new_best_score?
-       )}
+      {:noreply, assign(socket, gameplay?: false, time_left: 0,)}
     else
       new_socket = schedule_tick(socket)
-      {:noreply, assign(new_socket, board: add_new_bonus_field(socket), time_left: timeleft)}
+      {:noreply, assign(new_socket, time_left: timeleft)}
     end
   end
 
-  def handle_info({:score, score}, socket) do
-    {:noreply, assign(socket, scores: Enum.take([score | socket.assigns.scores], 10))}
-  end
-
-  def handle_event("player", key, socket) when key in ["r", "R"] do
+  def handle_event("player", key, socket) when key in ["=", "+"] do
     if socket.assigns.gameplay? do
       {:noreply, socket}
     else
@@ -86,88 +65,44 @@ defmodule HippoGameLiveWeb.HippoGameLive do
     end
   end
 
-  @board_size 10
-
-  @bonus_frequency [1, 1, 1, 2, 2, 3, -1]
   defp map() do
-    for x <- 1..@board_size, y <- 1..@board_size, into: %{} do
-      [random] = Enum.take_random(@bonus_frequency ++ Enum.to_list(10..24), 1)
-      type = create_new_bonus_field(random)
-      {{x, y}, type}
-    end
-  end
-
-  defp create_new_bonus_field(random) do
-    case random do
-      -1 -> :bonus_minus
-      1 -> :bonus1
-      2 -> :bonus2
-      3 -> :bonus3
-      _ -> :empty
-    end
-  end
-
-  defp get_field_value(bonus) do
-    case bonus do
-      :bonus_minus -> -500
-      :bonus1 -> 10
-      :bonus2 -> 50
-      :bonus3 -> 100
-      :empty -> 0
+    for x <- 1..@track_length, into: %{} do
+      {x, :empty}
     end
   end
 
   defp step(socket, step) do
-    old_position = {socket.assigns.player_x, socket.assigns.player_y}
-    {{x, y}, direction} = get_new_position(socket, step)
+    old_position = socket.assigns.player_x
+    text_to_type=socket.assigns.text_to_type
 
-    new_score =
-      Map.get(socket.assigns.board, {x, y})
-      |> get_field_value()
-
-    assign(socket,
-      board: Map.put(socket.assigns.board, old_position, :empty),
-      player_x: x,
-      player_y: y,
-      direction: direction,
-      score: socket.assigns.score + new_score,
-      bonus_value: new_score
-    )
+    {x, text_left} = get_new_position(socket, text_to_type, step)
+    assign(socket, player_x: x, text_to_type: text_left)
   end
 
-  defp get_new_position(socket, step) do
-    {x_old, y_old} = {socket.assigns.player_x, socket.assigns.player_y}
-    old_direction = socket.assigns.direction
+  defp get_new_position(socket, "", step) do
+    x = socket.assigns.player_x
+   {x, ""}
+  end
 
-    {{x, y}, direction} =
+  defp get_new_position(socket, text_to_type, step) do
+    x_old = socket.assigns.player_x
+    <<head :: binary-size(1)>> <> rest = text_to_type
+
+    {x, text_to_type} =
       case step do
-        "ArrowLeft" -> {{x_old - 1, y_old}, :playerleft}
-        "ArrowRight" -> {{x_old + 1, y_old}, :playerright}
-        "ArrowUp" -> {{x_old, y_old - 1}, :playerup}
-        "ArrowDown" -> {{x_old, y_old + 1}, :playerdown}
-        _ -> {{x_old, y_old}, old_direction}
+        k when k in [head] -> {x_old + 1, rest}
+        _ -> {x_old, text_to_type}
       end
 
-    {x, y} =
-      if x in 1..@board_size and y in 1..@board_size do
-        {x, y}
+    x =
+      if x in 1..@track_length do
+        x
       else
-        {x_old, y_old}
+        x_old
       end
 
-    {{x, y}, direction}
+    {x, text_to_type}
   end
 
-  defp add_new_bonus_field(socket) do
-    board = socket.assigns.board
-    {player_x, player_y} = {socket.assigns.player_x, socket.assigns.player_y}
-    {x, y} = {:rand.uniform(@board_size), :rand.uniform(@board_size)}
-
-    if Map.get(board, {x, y}) == :empty && x != player_x && y != player_y do
-      [random] = Enum.take_random(@bonus_frequency, 1)
-      Map.put(board, {x, y}, create_new_bonus_field(random))
-    else
-      add_new_bonus_field(socket)
-    end
-  end
 end
+
