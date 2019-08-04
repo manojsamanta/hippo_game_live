@@ -1,4 +1,4 @@
-# The Hippo Game
+# Typing Words
 
 To start your Phoenix server:
 
@@ -18,8 +18,11 @@ Ready to run in production? Please [check our deployment guides](https://hexdocs
   * Mailing list: http://groups.google.com/group/phoenix-talk
   * Source: https://github.com/phoenixframework/phoenix
 
-## About Hippos
+## Typing Game
 
-"Hippopotamuses have been the subjects of various African folktales. According to a San story; when the Creator assigned each animal its place in nature, the hippos wanted to live in the water, but were refused out of fear that they might eat all the fish. After begging and pleading, the hippos were finally allowed to live in the water on the conditions that they would eat grass instead of fish and would fling their dung so that it can be inspected for fish bones."
+You will see a random word on screen and need to type it. If you type the correct letter, hippo
+will move one step forward. If not, it will stay in its place.
 
-Source: https://en.wikipedia.org/wiki/Hippopotamus#Cultural_depictions
+
+
+
