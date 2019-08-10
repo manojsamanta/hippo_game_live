@@ -1,7 +1,7 @@
 defmodule HippoGameLiveWeb.HippoGameLive do
   use Phoenix.LiveView
 
-  @game_time 4
+  @game_time 20
   @track_length 10
 
   @stored_text ["seattle", "portland", "bangkok", "tokyo", "london", "moscow", "vancouver"]
@@ -29,7 +29,8 @@ defmodule HippoGameLiveWeb.HippoGameLive do
       start_time: System.os_time(:second),
       gameplay?: true,
       time_left: @game_time,
-      text_to_type: @stored_text |> Enum.shuffle |> Enum.at(0)
+      text_to_type: @stored_text |> Enum.shuffle |> Enum.at(0),
+      extra_letters: 0
     )
   end
 
@@ -71,28 +72,34 @@ defmodule HippoGameLiveWeb.HippoGameLive do
     end
   end
 
-  defp step(socket, step) do
+  defp step(socket, key) do
     old_position = socket.assigns.player_x
     text_to_type=socket.assigns.text_to_type
+    extra_letters=socket.assigns.extra_letters
 
-    {x, text_left} = get_new_position(socket, text_to_type, step)
-    assign(socket, player_x: x, text_to_type: text_left)
+    {x, text_left, extra_letters} = get_new_position(socket, text_to_type, key, extra_letters)
+    assign(socket, player_x: x, text_to_type: text_left, extra_letters: extra_letters)
   end
 
-  defp get_new_position(socket, "", step) do
+  defp get_new_position(socket, "", key, _) do
     x = socket.assigns.player_x
-   {x, ""}
+   {x, "", 0}
   end
 
-  defp get_new_position(socket, text_to_type, step) do
+  defp get_new_position(socket, text_to_type, key, extra_letters) do
     x_old = socket.assigns.player_x
     <<head :: binary-size(1)>> <> rest = text_to_type
 
-    {x, text_to_type} =
-      case step do
-        k when k in [head] -> {x_old + 1, rest}
-        _ -> {x_old, text_to_type}
+    {x, text_to_type, extra_letters} =
+      case {key, extra_letters} do
+        {k, 0} when k in [head] -> {x_old + 1, rest, 0}
+        {"Backspace", 0} -> {x_old, text_to_type, extra_letters}
+        {"Backspace", _} -> {x_old, text_to_type, extra_letters-1}
+        {k, _} when k not in [head] -> {x_old, text_to_type, extra_letters+1}
+        {_, _} -> {x_old, text_to_type, extra_letters+1}
       end
+
+    # IO.inspect(extra_letters)
 
     x =
       if x in 1..@track_length do
@@ -101,7 +108,7 @@ defmodule HippoGameLiveWeb.HippoGameLive do
         x_old
       end
 
-    {x, text_to_type}
+    {x, text_to_type, extra_letters}
   end
 
 end
